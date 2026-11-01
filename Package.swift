@@ -6,7 +6,8 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [.executable(name: "MacDetect", targets: ["MacDetectApp"])],
     targets: [
-        .target(name: "MacDetectCore"),
+        .target(name: "MacDetectHardware", linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("CoreFoundation")]),
+        .target(name: "MacDetectCore", dependencies: ["MacDetectHardware"]),
         .executableTarget(name: "MacDetectApp", dependencies: ["MacDetectCore"]),
         .testTarget(name: "MacDetectCoreTests", dependencies: ["MacDetectCore"])
     ]

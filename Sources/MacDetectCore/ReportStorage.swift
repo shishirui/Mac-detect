@@ -21,6 +21,12 @@ public final class ReportStorage {
                 // A process crash or power loss must never leave persisted "running" checks looking completed.
                 if report.finishedAt == nil {
                     report.wasCancelled = true
+                    if report.mode != .quick, report.sensors != nil {
+                        report.sensors?.interrupted = true
+                        for check in [report.sensors!.temperatureCheck(), report.sensors!.fanCheck(machine: report.machine)] {
+                            if let index = report.checks.firstIndex(where: { $0.id == check.id }) { report.checks[index] = check }
+                        }
+                    }
                     for index in report.checks.indices where !report.checks[index].status.isFinished {
                         report.checks[index].status = .interrupted
                         report.checks[index].summary = "上次检测未正常完成，需重新验机"

@@ -43,6 +43,7 @@ swift build -c release --arch arm64 --arch x86_64
 BINARY_DIR="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$BINARY_DIR/MacDetect" "$APP_PATH/Contents/MacOS/MacDetect"
+cp THIRD_PARTY_NOTICES.md "$APP_PATH/Contents/Resources/THIRD_PARTY_NOTICES.md"
 /usr/bin/swift scripts/make-icon.swift .build/MacDetect.iconset
 /usr/bin/iconutil -c icns .build/MacDetect.iconset -o "$APP_PATH/Contents/Resources/AppIcon.icns"
 cat > "$APP_PATH/Contents/Info.plist" <<PLIST

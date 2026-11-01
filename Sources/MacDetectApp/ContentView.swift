@@ -181,12 +181,49 @@ struct ContentView: View {
                     Button { store.selectedPage = .manual } label: {
                         HStack { Label("继续人工检查", systemImage: "checklist"); Spacer(); Image(systemName: "arrow.up.right") }.font(.system(size: 12, weight: .medium))
                     }.buttonStyle(.plain).disabled(store.report == nil)
-                    Text("SSD 详细寿命数据尚未覆盖，基础 SMART 正常不代表剩余寿命充足。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
+                    Text("SSD 耐久为厂家估算；累计写入、温度与风扇数据需结合负载和人工检查判断。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
                 }.padding(20).card().frame(maxWidth: .infinity)
             }
+            hardwareMetrics
             automaticResults
             boundaryNote
         }
+    }
+    private var hardwareMetrics: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label("SSD 与散热数据", systemImage: "waveform.path.ecg").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Text(store.isRunning ? "检测期间采集" : "本次检测快照").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), alignment: .leading, spacing: 18) {
+                hardwareMetric("额定耐久消耗 · 厂家估算", store.report?.ssdHealth?.enduranceText ?? "未验证", "不是剩余使用年限")
+                hardwareMetric("累计主机写入", store.report?.ssdHealth?.writtenText ?? "未验证", "十进制 TB · 不等同 NAND 写入")
+                hardwareMetric("SSD 复合温度", store.report?.ssdHealth?.temperatureCelsius.map { String(format: "%.1f°C", $0) } ?? "未验证", "NVMe SMART 单次快照")
+                hardwareMetric("SMC 最近采样最高温", store.report?.sensors?.latest?.temperatures.map(\.value).max().map { String(format: "%.1f°C", $0) } ?? "未验证", "已读取通道 · 不保证是 CPU 温度")
+                hardwareMetric("SMC 本轮采样最高温", store.report?.sensors?.temperatures.map(\.maximum).max().map { String(format: "%.1f°C", $0) } ?? "未验证", "详见各通道最低 / 最高记录")
+                hardwareMetric("风扇最近采样转速", fanMetric, "仅观察转速 · 不改变风扇控制")
+            }
+            if let sensors = store.report?.sensors, let date = sensors.latest?.sampledAt {
+                TimelineView(.periodic(from: .now, by: 2)) { context in
+                    Text("传感器：\(sensors.sampleCount) 次采样 · 最后 \(date.formatted(date: .omitted, time: .standard))" + (store.isRunning && context.date.timeIntervalSince(date) > 12 || sensors.interrupted ? " · 采样未更新，显示历史数据" : ""))
+                        .font(.system(size: 10)).foregroundStyle(Palette.muted)
+                }
+            }
+            Text("无法读取会保留为未验证；读到数值不等于散热或寿命已被完整验证。展开下方检测项查看数据来源、时间和限制。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+        }.padding(20).card()
+    }
+    private var fanMetric: String {
+        if store.report?.checks.first(where: { $0.id == "fans" })?.status == .notApplicable { return "无风扇 · 不适用" }
+        guard let fans = store.report?.sensors?.latest?.fans, !fans.isEmpty else { return "未验证" }
+        return fans.map { "\($0.key) \(Int($0.value)) RPM" }.joined(separator: " / ")
+    }
+    private func hardwareMetric(_ title: String, _ value: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.system(size: 10)).foregroundStyle(Palette.muted)
+            Text(value).font(.system(size: 18, weight: .semibold, design: .rounded)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            Text(detail).font(.system(size: 9)).foregroundStyle(Palette.muted)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var machineCard: some View {
         HStack(spacing: 24) {

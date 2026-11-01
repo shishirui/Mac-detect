@@ -3,6 +3,7 @@ import Foundation
 public enum ScanEvent {
     case machine(MachineInfo)
     case result(CheckResult)
+    case metrics(SSDHealth?, SensorSession?)
 }
 
 public final class Scanner {
@@ -10,6 +11,8 @@ public final class Scanner {
     private let executable: String
     private let emit: (ScanEvent) -> Void
     private var report: InspectionReport
+    private var monitor: SensorMonitor?
+    private var bootDiskInfo: Data?
     public init(mode: InspectionMode, executable: String, token: CancellationToken, report: InspectionReport? = nil, emit: @escaping (ScanEvent) -> Void) {
         self.report = report ?? InspectionReport(mode: mode)
         self.executable = executable; self.token = token; self.emit = emit
@@ -54,14 +57,23 @@ public final class Scanner {
         perform("storage") {
             let output = try command("/usr/sbin/diskutil", ["info", "-plist", "/"])
             guard output.exitCode == 0 else { throw SystemParsers.ParseError.missing("磁盘信息读取失败") }
+            bootDiskInfo = output.data
             let (result, size, free) = try SystemParsers.storage(output.data)
             report.machine.storage = size; report.machine.freeStorage = free; emit(.machine(report.machine))
             return result
         }
         perform("ssdDetail") {
-            .init("ssdDetail", "SSD 磨损与累计写入", .storage, status: .unavailable,
-                  summary: "本版本尚未提供详细 NVMe 寿命数据，不能推断剩余寿命",
-                  evidence: ["系统基础 SMART 结果不包含可靠的磨损百分比、累计写入量和完整介质错误信息。", "后续需针对机型适配并验证；此项不计为通过。"])
+            guard let bootDiskInfo else { throw SystemParsers.ParseError.missing("没有启动卷信息，无法选择物理 SSD") }
+            let store = try BootDiskResolver.physicalStore(bootDiskInfo)
+            let info = try command("/usr/sbin/diskutil", ["info", "-plist", store])
+            guard info.exitCode == 0 else { throw SystemParsers.ParseError.missing("物理盘信息读取失败") }
+            let disk = try BootDiskResolver.wholeDisk(info.data)
+            let output = try command(executable, ["--probe-nvme", disk], timeout: 12)
+            guard output.exitCode == 0 else { throw SystemParsers.ParseError.missing("SSD 采集进程未能完成") }
+            let probe = try JSONDecoder().decode(SSDProbe.self, from: output.data)
+            guard let health = probe.health else { throw SystemParsers.ParseError.missing(probe.error ?? "SSD 数据不可用") }
+            report.ssdHealth = health; emit(.metrics(report.ssdHealth, report.sensors))
+            return health.check
         }
         perform("management") {
             let output = try command("/usr/bin/profiles", ["status", "-type", "enrollment"])
@@ -73,8 +85,22 @@ public final class Scanner {
             let label = Self.thermalLabel(state.rawValue)
             return .init("thermal", "系统热状态", .system, status: state.rawValue >= 2 ? .warning : .passed,
                          summary: "检测时系统热状态：\(label)",
-                         evidence: ["来源：ProcessInfo.thermalState；这是系统热压力等级，不是摄氏温度。", "本版本不读取风扇转速或传感器温度。单次正常不能证明持续负载下散热正常。"])
+                         evidence: ["来源：ProcessInfo.thermalState；这是系统热压力等级，不是摄氏温度。", "摄氏温度及风扇数据见独立检测项。单次正常不能证明持续负载下散热正常。"])
         }
+        perform("temperature") {
+            let output = try command(executable, ["--probe-sensors"], timeout: 15)
+            guard output.exitCode == 0 else { throw SystemParsers.ParseError.missing("传感器采集进程未能完成") }
+            let sample = try JSONDecoder().decode(SensorSnapshot.self, from: output.data)
+            var session = SensorSession(); session.add(sample); report.sensors = session
+            emit(.metrics(report.ssdHealth, report.sensors))
+            return session.temperatureCheck()
+        }
+        perform("fans") { (report.sensors ?? SensorSession()).fanCheck(machine: report.machine) }
+        if report.mode != .quick && !token.isCancelled {
+            do { monitor = try SensorMonitor(executable: executable) }
+            catch { report.sensors = report.sensors ?? SensorSession(); report.sensors?.interrupted = true }
+        }
+        defer { monitor?.stop(); monitor = nil }
         for id in ["cpu", "memory", "gpu", "disk"] {
             guard !token.isCancelled else { break }
             if report.mode == .quick {
@@ -85,6 +111,12 @@ public final class Scanner {
                 perform(id) { try runWorker(id) }
             }
         }
+        if report.mode != .quick && report.sensors != nil {
+            collectSensors()
+            if monitor?.failed == true || token.isCancelled { report.sensors?.interrupted = true }
+            publish(report.sensors!.temperatureCheck()); publish(report.sensors!.fanCheck(machine: report.machine))
+            emit(.metrics(report.ssdHealth, report.sensors))
+        }
         for var result in report.checks where result.status == .pending || result.status == .running {
             result.status = token.isCancelled ? .interrupted : .unavailable
             result.summary = token.isCancelled ? "检测已停止，此项未完成" : "此项未能完成"
@@ -93,6 +125,16 @@ public final class Scanner {
         report.wasCancelled = token.isCancelled
         report.finishedAt = Date()
         return report
+    }
+    private func collectSensors() {
+        guard let monitor else { return }
+        let sample = monitor.poll()
+        guard sample != nil || (monitor.failed && report.sensors?.interrupted != true) else { return }
+        report.sensors = report.sensors ?? SensorSession()
+        if let sample { report.sensors?.add(sample) }
+        if monitor.failed { report.sensors?.interrupted = true }
+        emit(.metrics(report.ssdHealth, report.sensors))
+        publish(report.sensors!.temperatureCheck()); publish(report.sensors!.fanCheck(machine: report.machine))
     }
     private func runWorker(_ id: String) throws -> CheckResult {
         let seconds: Double
@@ -110,7 +152,7 @@ public final class Scanner {
         }
         defer { if let directory { try? FileManager.default.removeItem(at: directory) } }
         if id == "memory" { arguments += ["--mib", "256"] }
-        let output = try ProcessRunner.run(executable, arguments, timeout: seconds + 30, cancellation: token, watchSafety: true)
+        let output = try ProcessRunner.run(executable, arguments, timeout: seconds + 30, cancellation: token, watchSafety: true, onTick: { self.collectSensors() })
         var result = report.checks.first { $0.id == id }!
         if let reason = output.interruption {
             result.status = token.isCancelled ? .interrupted : .warning

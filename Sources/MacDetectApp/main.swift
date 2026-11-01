@@ -8,7 +8,14 @@ func argument(_ key: String) -> String? {
     guard let index = arguments.firstIndex(of: key), index + 1 < arguments.count else { return nil }
     return arguments[index + 1]
 }
-if let worker = argument("--worker") {
+if let disk = argument("--probe-nvme") {
+    if let data = try? JSONEncoder().encode(SSDProbe.read(disk: disk)) { FileHandle.standardOutput.write(data) }
+} else if arguments.contains("--probe-sensors") {
+    if let data = try? JSONEncoder().encode(SensorReader().sample()) { FileHandle.standardOutput.write(data) }
+} else if let path = argument("--monitor-sensors"), let parent = Int32(argument("--parent-pid") ?? "") {
+    do { try SensorHelper.monitor(destination: URL(fileURLWithPath: path), parentPID: parent) }
+    catch { exit(1) }
+} else if let worker = argument("--worker") {
     let seconds = Double(argument("--seconds") ?? "1") ?? 1
     let mib = Int(argument("--mib") ?? "256") ?? 256
     let outcome: WorkerOutcome

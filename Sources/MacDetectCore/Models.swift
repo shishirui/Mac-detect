@@ -1,6 +1,6 @@
 import Foundation
 
-public let appVersion = "0.1.1"
+public let appVersion = "0.2.0"
 
 public enum InspectionMode: String, Codable, CaseIterable, Identifiable {
     case quick, standard, extended
@@ -25,9 +25,10 @@ public enum InspectionMode: String, Codable, CaseIterable, Identifiable {
 }
 
 public enum CheckStatus: String, Codable, CaseIterable {
-    case pending, running, passed, warning, failed, unavailable, skipped, interrupted
+    case pending, running, passed, warning, failed, unavailable, skipped, interrupted, notApplicable
     public var title: String {
         switch self {
+        case .notApplicable: return "不适用"
         case .pending: return "待检测"
         case .running: return "检测中"
         case .passed: return "通过"
@@ -76,6 +77,8 @@ public struct CheckResult: Codable, Identifiable, Equatable {
         .init("management", "企业管理状态", .security),
         .init("panic", "近期内核崩溃记录", .system),
         .init("thermal", "系统热状态", .system),
+        .init("temperature", "温度传感器", .system),
+        .init("fans", "风扇转速", .system),
         .init("cpu", "CPU 运算校验", .performance),
         .init("memory", "内存读写校验", .performance),
         .init("gpu", "GPU 计算校验", .performance),
@@ -131,7 +134,7 @@ public struct ManualCheck: Codable, Identifiable, Equatable {
 }
 
 public struct InspectionReport: Codable, Identifiable {
-    public var schemaVersion: Int = 1
+    public var schemaVersion: Int = 2
     public var softwareVersion: String = appVersion
     public var id: UUID = UUID()
     public var startedAt: Date = Date()
@@ -142,10 +145,12 @@ public struct InspectionReport: Codable, Identifiable {
     public var manual: [ManualCheck] = ManualCheck.defaults
     public var assetTag: String = ""
     public var notes: String = ""
+    public var ssdHealth: SSDHealth?
+    public var sensors: SensorSession?
     public var wasCancelled = false
     public init(mode: InspectionMode) { self.mode = mode }
     public var passedCount: Int { checks.filter { $0.status == .passed }.count }
-    public var unresolvedCount: Int { checks.filter { $0.status != .passed }.count + manual.filter { !$0.isResolved }.count }
+    public var unresolvedCount: Int { checks.filter { $0.status != .passed && $0.status != .notApplicable }.count + manual.filter { !$0.isResolved }.count }
     public var hasIssue: Bool { checks.contains { $0.status == .failed } || manual.contains { $0.state == .issue } }
     public var verdict: String {
         if hasIssue { return "发现异常 · 建议暂停收购" }

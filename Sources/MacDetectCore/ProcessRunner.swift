@@ -19,7 +19,7 @@ private final class PressureSignal: @unchecked Sendable {
 /// No shell, bounded output, monotonic deadlines, and a kill fallback for a stuck child.
 public enum ProcessRunner {
     public static func run(_ executable: String, _ arguments: [String], timeout: Double = 30,
-                           cancellation: CancellationToken, watchSafety: Bool = false) throws -> CommandOutput {
+                           cancellation: CancellationToken, watchSafety: Bool = false, onTick: (() -> Void)? = nil) throws -> CommandOutput {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MacDetect-command-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -49,6 +49,7 @@ public enum ProcessRunner {
         var reason: String?
         var peak = 0
         while child.isRunning {
+            onTick?()
             peak = max(peak, ProcessInfo.processInfo.thermalState.rawValue)
             if cancellation.isCancelled { reason = "用户已停止检测" }
             else if ProcessInfo.processInfo.systemUptime - start > timeout { reason = "检测超时，未取得完整结果" }

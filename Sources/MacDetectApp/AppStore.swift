@@ -42,6 +42,7 @@ import UniformTypeIdentifiers
                         guard let self, self.isRunning, self.report?.id == fresh.id else { return }
                         switch event {
                         case .machine(let machine): self.report?.machine = machine
+                        case .metrics(let ssd, let sensors): self.report?.ssdHealth = ssd; self.report?.sensors = sensors
                         case .result(let result):
                             if let index = self.report?.checks.firstIndex(where: { $0.id == result.id }) { self.report?.checks[index] = result }
                             if result.status == .running { self.currentCheckStarted = Date() }
