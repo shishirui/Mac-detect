@@ -55,8 +55,12 @@ public enum ReportExporter {
         return """
         <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mac验机报告</title>
         <style>body{font:14px/1.7 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#192d39;background:#f4f6f7;margin:0}main{max-width:860px;margin:32px auto;background:white;padding:48px}h1{font-size:30px;margin:8px 0}h2{margin-top:32px}h3{font-size:16px;margin:0}.eyebrow{letter-spacing:3px;color:#527063}.verdict{padding:18px;background:#edf5f0;border-left:4px solid #33775b}.meta{white-space:pre-wrap;color:#52616a}section{border-bottom:1px solid #dde4e8;padding:18px 0;break-inside:avoid}.check{display:flex;justify-content:space-between;gap:20px}li{color:#64717a}.passed{color:#1f7352}.failed{color:#b33232}.warning{color:#8e5a0c}footer{margin-top:32px;color:#65737a;font-size:12px}p{overflow-wrap:anywhere;white-space:pre-wrap}@media print{body{background:white}main{margin:0;padding:0;max-width:none}@page{size:A4;margin:18mm}}</style>
-        <main><div class="eyebrow">MAC DETECT · LOCAL INSPECTION</div><h1>Mac 验机报告</h1><p class="verdict">\(escape(report.verdict))</p><div class="meta">\(escape(metadata(report)))</div><h2>自动检测 · \(report.passedCount) / \(report.checks.count) 项通过</h2>\(rows)<h2>人工验机记录</h2><p>以下状态由操作人填写，不代表软件自动验证。</p>\(manual)<h2>收购备注</h2><p>\(escape(report.notes.isEmpty ? "未填写" : report.notes))</p><footer>\(escape(InspectionReport.limitations))<p>本地生成的验机记录，不是 Apple 认证或防篡改鉴定证书。报告包含设备序列号，请仅与相关交易人员分享。</p></footer></main></html>
+        <main><div class="eyebrow">MAC DETECT · LOCAL INSPECTION</div><h1>Mac 验机报告</h1><p class="verdict">\(escape(report.verdict))</p><div class="meta">\(escape(metadata(report)))</div><h2>自动检测 · \(report.passedCount) / \(report.checks.count) 项通过</h2>\(rows)<h2>人工验机记录</h2><p>以下状态由操作人填写，不代表软件自动验证。</p>\(manual)\(resetHTML(report))<h2>收购备注</h2><p>\(escape(report.notes.isEmpty ? "未填写" : report.notes))</p><footer>\(escape(InspectionReport.limitations))<p>本地生成的验机记录，不是 Apple 认证或防篡改鉴定证书。报告包含设备序列号，请仅与相关交易人员分享。</p></footer></main></html>
         """
+    }
+    private static func resetHTML(_ report: InspectionReport) -> String {
+        guard let record = report.resetRecord else { return "" }
+        return "<h2>交机与重置记录</h2><p>" + record.lines.map(escape).joined(separator: "<br>") + "</p>"
     }
     public static func metadata(_ report: InspectionReport) -> String {
         let machine = report.machine
@@ -83,6 +87,7 @@ public enum ReportExporter {
         for check in report.manual {
             lines += ["\n\(check.title)  ·  \(check.state.title)\(check.isResolved ? "" : " · 待完成")", check.instructions, "备注：\(check.note.isEmpty ? "未填写" : check.note)"]
         }
+        if let record = report.resetRecord { lines += ["\n交机与重置记录"] + record.lines }
         lines += ["\n收购备注", report.notes.isEmpty ? "未填写" : report.notes, "\n检测边界", InspectionReport.limitations, "本地生成的验机记录，不是 Apple 认证或防篡改鉴定证书。报告包含设备序列号，请妥善保管。"]
         return lines.joined(separator: "\n")
     }

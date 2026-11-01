@@ -40,6 +40,12 @@ public enum PDFExporter {
             block.append(line("备注：\(item.note.isEmpty ? "未填写" : item.note)", size: 10))
             blocks.append(block)
         }
+        if let record = report.resetRecord {
+            let block = NSMutableAttributedString()
+            block.append(line("交机与重置记录", size: 15, weight: .semibold, color: green))
+            record.lines.forEach { block.append(line($0, size: 10)) }
+            blocks.append(block)
+        }
         let notes = NSMutableAttributedString()
         notes.append(line("03  收购备注", size: 15, weight: .semibold, color: green))
         notes.append(line(report.notes.isEmpty ? "未填写" : report.notes))

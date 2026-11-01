@@ -1,6 +1,6 @@
 import Foundation
 
-public let appVersion = "0.2.0"
+public let appVersion = "0.3.0"
 
 public enum InspectionMode: String, Codable, CaseIterable, Identifiable {
     case quick, standard, extended
@@ -134,7 +134,7 @@ public struct ManualCheck: Codable, Identifiable, Equatable {
 }
 
 public struct InspectionReport: Codable, Identifiable {
-    public var schemaVersion: Int = 2
+    public var schemaVersion: Int = 3
     public var softwareVersion: String = appVersion
     public var id: UUID = UUID()
     public var startedAt: Date = Date()
@@ -145,13 +145,15 @@ public struct InspectionReport: Codable, Identifiable {
     public var manual: [ManualCheck] = ManualCheck.defaults
     public var assetTag: String = ""
     public var notes: String = ""
+    public var resetRecord: ResetRecord?
+    public var importedFromReportID: UUID?
     public var ssdHealth: SSDHealth?
     public var sensors: SensorSession?
     public var wasCancelled = false
     public init(mode: InspectionMode) { self.mode = mode }
     public var passedCount: Int { checks.filter { $0.status == .passed }.count }
-    public var unresolvedCount: Int { checks.filter { $0.status != .passed && $0.status != .notApplicable }.count + manual.filter { !$0.isResolved }.count }
-    public var hasIssue: Bool { checks.contains { $0.status == .failed } || manual.contains { $0.state == .issue } }
+    public var unresolvedCount: Int { checks.filter { $0.status != .passed && $0.status != .notApplicable }.count + manual.filter { !$0.isResolved }.count + (resetRecord?.unresolvedCount ?? 0) }
+    public var hasIssue: Bool { checks.contains { $0.status == .failed } || manual.contains { $0.state == .issue } || resetRecord?.postChecks.contains { $0.state == .issue } == true }
     public var verdict: String {
         if hasIssue { return "发现异常 · 建议暂停收购" }
         if checks.contains(where: { $0.status == .warning }) { return "需要复核 · 暂勿据此完成收购" }

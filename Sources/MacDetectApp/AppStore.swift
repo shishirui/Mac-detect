@@ -13,6 +13,13 @@ import UniformTypeIdentifiers
     @Published var selectedPage: AppPage = .overview
     @Published var currentCheckStarted: Date?
     @Published var showSerial = false
+    @Published var resetHost: ResetHost?
+    @Published var isResetBusy = false
+    @Published var resetPreparation = ResetPreparation()
+    @Published var resetBackup: ResetBackupReceipt?
+    @Published var showResetConfirmation = false
+    @Published var resetMessage: String?
+    private var preparedResetReportID: UUID?
     private var cancellation: CancellationToken?
     private var storage: ReportStorage?
     var afterStopped: (() -> Void)?
@@ -30,7 +37,8 @@ import UniformTypeIdentifiers
         return showSerial || serial.count < 6 ? serial : "•••• \(serial.suffix(4))"
     }
     func start() {
-        guard !isRunning else { return }
+        guard !isRunning, !isResetBusy else { return }
+        clearResetConsent()
         let token = CancellationToken(); cancellation = token
         let fresh = InspectionReport(mode: mode)
         report = fresh; isRunning = true; selectedPage = .overview; persist()
@@ -63,15 +71,17 @@ import UniformTypeIdentifiers
     }
     func stop() { cancellation?.cancel() }
     func setManual(_ id: String, state: ManualState? = nil, note: String? = nil) {
+        guard !isResetBusy else { return }; resetBackup = nil; showResetConfirmation = false
         guard let index = report?.manual.firstIndex(where: { $0.id == id }) else { return }
         if let state { report?.manual[index].state = state }
         if let note { report?.manual[index].note = String(note.prefix(4000)) }
         report?.manual[index].updatedAt = Date(); persist()
     }
-    func setNotes(_ value: String) { report?.notes = String(value.prefix(16000)); persist() }
-    func setAssetTag(_ value: String) { report?.assetTag = String(value.prefix(200)); persist() }
+    func setNotes(_ value: String) { guard !isResetBusy else { return }; resetBackup = nil; showResetConfirmation = false; report?.notes = String(value.prefix(16000)); persist() }
+    func setAssetTag(_ value: String) { guard !isResetBusy else { return }; resetBackup = nil; showResetConfirmation = false; report?.assetTag = String(value.prefix(200)); persist() }
     func load(_ item: InspectionReport) {
-        guard !isRunning else { return }
+        guard !isRunning, !isResetBusy else { return }
+        clearResetConsent()
         report = item; mode = item.mode; selectedPage = .report
     }
     func persist() {
@@ -81,6 +91,120 @@ import UniformTypeIdentifiers
     }
     func reloadHistory() { do { history = try storage?.all() ?? [] } catch { errorMessage = error.localizedDescription } }
     func revealReports() { if let storage { NSWorkspace.shared.open(storage.directory) } }
+    func clearResetConsent() {
+        resetPreparation = ResetPreparation(); resetBackup = nil
+        showResetConfirmation = false; preparedResetReportID = nil; resetMessage = nil
+    }
+    var resetBlockers: [String] {
+        ResetGate.blockers(host: resetHost, report: report, preparation: resetPreparation, backup: resetBackup, busy: isRunning || isResetBusy)
+    }
+    func refreshResetHost() {
+        guard !isRunning, !isResetBusy else { return }
+        isResetBusy = true; showResetConfirmation = false
+        Task {
+            do { resetHost = try await Task.detached(priority: .userInitiated) { try ResetHostProbe.read() }.value }
+            catch { resetHost = nil; errorMessage = "读取本机信息失败：\(error.localizedDescription)" }
+            isResetBusy = false
+        }
+    }
+    func exportHandoff() {
+        guard !isRunning, !isResetBusy, var updated = report, updated.finishedAt != nil else { return }
+        let panel = NSOpenPanel(); panel.title = "选择交机包保存位置"
+        panel.message = "建议选择 U 盘。若先保存到本机，请在抹除前将整个文件夹复制到另一台电脑。包含完整序列号和备注。"
+        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        let id = updated.id
+        updated.schemaVersion = 3
+        updated.resetRecord = updated.resetRecord ?? ResetRecord(); updated.resetRecord?.backupExportedAt = Date()
+        isResetBusy = true; resetBackup = nil; resetPreparation.reportCopiedOffMac = false
+        let host = resetHost
+        Task {
+            do {
+                let snapshot = updated
+                let directory = try await Task.detached(priority: .userInitiated) { try HandoffPackage.export(snapshot, host: host, into: folder) }.value
+                if report?.id == id {
+                    report = updated; persist()
+                    resetBackup = ResetBackupReceipt(reportID: id, machineSerial: updated.machine.serial)
+                    resetMessage = "交机包已导出。请确认已带离目标 Mac，再勾选“已保存到外部设备”。"
+                }
+                NSWorkspace.shared.activateFileViewerSelecting([directory])
+            } catch { errorMessage = "交机包导出失败：\(error.localizedDescription)" }
+            isResetBusy = false
+        }
+    }
+    func importHandoff() {
+        guard !isRunning, !isResetBusy else { return }
+        let panel = NSOpenPanel(); panel.title = "导入交机 JSON 报告"
+        panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
+        panel.message = "导入为独立历史记录，不覆盖本机报告，也不恢复任何抹除授权。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let imported = try HandoffPackage.read(url)
+            guard let storage else { throw SystemParsers.ParseError.missing("本地报告目录不可用") }
+            try storage.save(imported)
+            clearResetConsent(); report = imported; mode = imported.mode
+            reloadHistory(); selectedPage = .reset
+            resetMessage = "已导入历史记录。请核对目标序列号；抹除前自动检测结果保持原样，交机观察单独记录。"
+        } catch { errorMessage = "无法导入报告：\(error.localizedDescription)" }
+    }
+    func setPostCheck(_ id: String, state: ManualState? = nil, note: String? = nil) {
+        guard !isRunning, !isResetBusy, report != nil else { return }
+        resetBackup = nil; showResetConfirmation = false
+        report?.schemaVersion = 3
+        report?.resetRecord = report?.resetRecord ?? ResetRecord()
+        guard let index = report?.resetRecord?.postChecks.firstIndex(where: { $0.id == id }) else { return }
+        if let state, [.unverified, .passed, .issue].contains(state) { report?.resetRecord?.postChecks[index].state = state }
+        if let note { report?.resetRecord?.postChecks[index].note = String(note.prefix(4000)) }
+        report?.resetRecord?.postChecks[index].updatedAt = Date(); persist()
+    }
+    func prepareResetConfirmation() {
+        guard !isRunning, !isResetBusy, let id = report?.id else { return }
+        isResetBusy = true; showResetConfirmation = false
+        Task {
+            do {
+                let fresh = try await Task.detached(priority: .userInitiated) { try ResetHostProbe.read() }.value
+                resetHost = fresh
+                guard report?.id == id else { throw SystemParsers.ParseError.missing("所选报告已改变，请重新准备") }
+                _ = try ResetGate.launchTarget(host: fresh, report: report, preparation: resetPreparation, backup: resetBackup, busy: isRunning)
+                preparedResetReportID = id; showResetConfirmation = true
+            } catch { errorMessage = error.localizedDescription }
+            isResetBusy = false
+        }
+    }
+    func openSystemEraseAssistant() {
+        guard !isResetBusy, showResetConfirmation, preparedResetReportID == report?.id, var updated = report else { return }
+        showResetConfirmation = false
+        do {
+            let target = try ResetGate.launchTarget(host: resetHost, report: report, preparation: resetPreparation, backup: resetBackup, busy: isRunning)
+            guard Bundle(url: target)?.bundleIdentifier == "com.apple.EraseAssistant" else { throw SystemParsers.ParseError.missing("Apple 系统抹掉助理入口不可用，请按页面中的系统设置路径操作") }
+            updated.resetRecord = updated.resetRecord ?? ResetRecord()
+            updated.resetRecord?.assistantRequestedAt = Date(); updated.resetRecord?.assistantOpenedAt = nil; updated.resetRecord?.assistantError = nil
+            guard let storage else { throw SystemParsers.ParseError.missing("无法保存准备记录，请先导出并修复本地记录目录") }
+            try storage.save(updated) // If this fails, do not launch anything.
+            report = updated; isResetBusy = true
+            let id = updated.id
+            let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = true
+            NSWorkspace.shared.openApplication(at: target, configuration: configuration) { [weak self] app, error in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.isResetBusy = false; self.preparedResetReportID = nil
+                    if self.report?.id == id {
+                        if app != nil, error == nil {
+                            self.report?.resetRecord?.assistantOpenedAt = Date()
+                            self.resetMessage = "系统已接受打开抹掉助理的请求。请在 Apple 界面操作；抹除是否执行及完成仍未验证。"
+                        } else {
+                            let message = error?.localizedDescription ?? "系统未返回已打开的应用"
+                            self.report?.resetRecord?.assistantError = message
+                            self.errorMessage = "未能打开抹掉助理：\(message)。可手动前往系统设置 → 通用 → 传输或还原。"
+                        }
+                        self.persist()
+                    }
+                    // Every attempt consumes the preparation; never reuse consent.
+                    self.resetPreparation = ResetPreparation(); self.resetBackup = nil
+                }
+            }
+        } catch { preparedResetReportID = nil; errorMessage = error.localizedDescription }
+    }
     func export(_ type: ExportType) {
         guard let report else { return }
         let panel = NSSavePanel()
@@ -102,10 +226,10 @@ import UniformTypeIdentifiers
 }
 
 enum AppPage: String, CaseIterable, Identifiable {
-    case overview = "验机工作台", manual = "人工检查", report = "验机报告", history = "历史记录"
+    case overview = "验机工作台", manual = "人工检查", report = "验机报告", reset = "交机与重置", history = "历史记录"
     var id: Self { self }
     var symbol: String {
-        switch self { case .overview: return "square.grid.2x2"; case .manual: return "checklist"; case .report: return "doc.text"; case .history: return "clock.arrow.circlepath" }
+        switch self { case .overview: return "square.grid.2x2"; case .manual: return "checklist"; case .report: return "doc.text"; case .reset: return "arrow.counterclockwise.circle"; case .history: return "clock.arrow.circlepath" }
     }
 }
 enum ExportType: String, CaseIterable { case pdf, html, json }

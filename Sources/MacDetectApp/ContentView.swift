@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import MacDetectCore
 
-private enum Palette {
+enum Palette {
     static let ink = Color(red: 0.10, green: 0.19, blue: 0.18)
     static let green = Color(red: 0.15, green: 0.42, blue: 0.32)
     static let mint = Color(red: 0.88, green: 0.94, blue: 0.90)
@@ -37,6 +37,7 @@ struct ContentView: View {
                         case .overview: overview
                         case .manual: manualPage
                         case .report: reportPage
+                        case .reset: ResetAssistantView()
                         case .history: historyPage
                         }
                     }.padding(30).frame(maxWidth: 1140).frame(maxWidth: .infinity)
@@ -152,7 +153,7 @@ struct ContentView: View {
                             if store.mode == .quick { store.start() } else { confirmStress = true }
                         } label: {
                             HStack { Spacer(); Image(systemName: "play.fill").font(.system(size: 11)); Text(store.report == nil ? "开始一键验机" : "开始新一轮验机").fontWeight(.semibold); Spacer(); Image(systemName: "arrow.right") }.padding(.vertical, 13).padding(.horizontal, 16)
-                        }.buttonStyle(.plain).foregroundStyle(.white).background(Palette.green, in: RoundedRectangle(cornerRadius: 9))
+                        }.buttonStyle(.plain).foregroundStyle(.white).background(Palette.green, in: RoundedRectangle(cornerRadius: 9)).disabled(store.isResetBusy)
                     }
                     Text("新一轮独立记录，历史报告自动保留。").font(.system(size: 10)).foregroundStyle(Palette.muted).frame(maxWidth: .infinity)
                 }.padding(20).card().frame(maxWidth: .infinity)
@@ -345,7 +346,7 @@ struct ContentView: View {
     private var historyPage: some View {
         Group {
             title("YOUR INSPECTION LOG", "留存依据，方便再看。", "这里是保存在当前 Mac 的报告。要带走记录，请在离开目标电脑前导出。")
-            HStack { Text("\(store.history.count) 份本地报告").foregroundStyle(Palette.muted); Spacer(); Button("打开报告文件夹") { store.revealReports() }.buttonStyle(.bordered) }
+            HStack { Text("\(store.history.count) 份本地报告").foregroundStyle(Palette.muted); Spacer(); Button("导入交机 JSON") { store.importHandoff() }.disabled(store.isRunning || store.isResetBusy); Button("打开报告文件夹") { store.revealReports() }.buttonStyle(.bordered) }
             if store.history.isEmpty { emptyState("从第一次验机开始", "检测结果将自动保存在本机，关闭应用后仍可查阅。", "clock.arrow.circlepath") }
             ForEach(store.history) { report in
                 Button { store.load(report) } label: {
@@ -405,7 +406,7 @@ private struct CheckRow: View {
         }
     }
 }
-private extension View {
+extension View {
     func card() -> some View {
         self.background(.white, in: RoundedRectangle(cornerRadius: 13)).overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.line.opacity(0.8), lineWidth: 1))
     }

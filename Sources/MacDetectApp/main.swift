@@ -8,7 +8,16 @@ func argument(_ key: String) -> String? {
     guard let index = arguments.firstIndex(of: key), index + 1 < arguments.count else { return nil }
     return arguments[index + 1]
 }
-if let disk = argument("--probe-nvme") {
+if let destination = argument("--reset-readiness-report") {
+    do {
+        let host = try ResetHostProbe.read()
+        let data = try JSONEncoder().encode(host)
+        let url = URL(fileURLWithPath: destination)
+        try data.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        print("只读重置条件检查完成；未启动抹除、重启或系统抹掉助理。")
+    } catch { fputs("读取失败：\(error.localizedDescription)\n", stderr); exit(1) }
+} else if let disk = argument("--probe-nvme") {
     if let data = try? JSONEncoder().encode(SSDProbe.read(disk: disk)) { FileHandle.standardOutput.write(data) }
 } else if arguments.contains("--probe-sensors") {
     if let data = try? JSONEncoder().encode(SensorReader().sample()) { FileHandle.standardOutput.write(data) }
