@@ -3,3 +3,9 @@ dist/
 .DS_Store
 *.xcuserstate
 .build-cache/
+.env
+.env.*
+*.p8
+*.p12
+*.pfx
+*.key

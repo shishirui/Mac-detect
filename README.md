@@ -1,15 +1,18 @@
 # Mac 验机助手
 
-面向二手 Mac 收购的本地原生 macOS 应用。拷贝 `.app` 后双击运行；每轮检测独立记录，自动保存，支持 PDF、HTML、JSON 导出。当前为 **0.1.0 预览版**，不是 Apple 认证检测工具，也不能保证机器无故障。
+面向二手 Mac 收购的本地原生 macOS 应用。拷贝 `.app` 后双击运行；每轮检测独立记录，自动保存，支持 PDF、HTML、JSON 导出。当前为 **0.1.1 预览版**，不是 Apple 认证检测工具，也不能保证机器无故障。
 
 ## 运行
 
-构建产物：`dist/Mac验机助手.app`，或解压 `dist/MacDetect-0.1.0-universal.zip`。
+[下载安装包](https://github.com/shishirui/Mac-detect/releases/tag/v0.1.1)。
+
+构建产物：`dist/Mac验机助手.app`，或解压 `dist/MacDetect-0.1.1-universal.zip`。
 
 - 目标系统：macOS 13 或更新版本；Universal 二进制包含 arm64、x86_64。
 - 无需在目标机安装 Xcode、Homebrew、Python 或其他运行依赖。
 - 需要能够登录并运行应用的 macOS。不能在激活锁页面或无法启动系统时直接运行。
-- 默认构建使用 ad-hoc 签名，**没有 Developer ID 签名及 Apple 公证**。跨机器传输后可能被 Gatekeeper 阻止。确认软件来源后，按 macOS“隐私与安全性”的正常允许流程处理；不要关闭 SIP 或全局关闭 Gatekeeper。正式分发应使用 Developer ID 签名、公证。
+- GitHub **v0.1.1 发布包**使用 Developer ID Application 签名并通过 Apple 公证，已附加公证票据。首次运行仍可能出现正常的“从互联网下载的应用”确认框；无需关闭 Gatekeeper 或 SIP。Apple 公证是软件分发安全检查，不是硬件检测能力认证。
+- 自行构建且未配置签名 / 公证凭据时，仍会生成 ad-hoc 本地开发包，不能把它当作已公证的发布包。
 - 所有自动检测均在本机执行，无遥测、账户、上传或服务器依赖。官方说明链接会在用户点击后打开浏览器。
 
 建议先快速筛查，再根据需要运行标准 / 深度验机，完成“人工检查”，最后导出报告。
@@ -63,10 +66,23 @@ open 'dist/Mac验机助手.app'
 
 该命令会生成指定 JSON，以及同名 HTML、PDF。实际机器序列号会写入这些本地文件，不应上传到代码仓库。
 
-构建脚本可通过 `MACDETECT_SIGN_IDENTITY` 使用已安装的 Developer ID 证书；如另配置 `MACDETECT_NOTARY_PROFILE`，使用钥匙串中对应的 notarytool 配置提交公证并 stapling。不要把账号、密码、证书私钥或配置值提交到仓库。
+正式分发构建需要 `MACDETECT_SIGN_IDENTITY`（已安装的 Developer ID Application 证书）以及以下任一认证方式：
+
+- `MACDETECT_NOTARY_PROFILE`：已存在的 notarytool 钥匙串配置。
+- `MACDETECT_NOTARY_KEY_PATH`、`MACDETECT_NOTARY_KEY_ID`：本机已有的 App Store Connect API 私钥路径与 Key ID；团队 API Key 还需 `MACDETECT_NOTARY_ISSUER_ID`，个人 API Key 不提供 issuer。
+
+在本机安全配置这些环境变量后，执行：
+
+```sh
+MACDETECT_REQUIRE_NOTARIZATION=1 ./scripts/build-app.sh
+```
+
+构建脚本会校验 Developer ID 和安全时间戳，等待 Apple 返回 `Accepted`，附加并校验票据，通过 Gatekeeper 检查后才生成分发 ZIP。`MACDETECT_REQUIRE_NOTARIZATION=1` 会拒绝缺少签名 / 公证配置的构建。可用 `MACDETECT_OUTPUT_DIR` 指定独立输出目录，保留已发布版本。校验文件使用 ZIP 文件名，可在下载目录执行 `shasum -a 256 -c SHA256SUMS.txt`。
+
+不要把账号、密码、证书私钥或环境变量的实际配置值提交到仓库。公证结果保存在 `.build/notarization/`，不会加入 Git。
 
 ## 验收边界
 
 编译和单元测试不能替代真机适配。首次交付的本机验证范围见 `VALIDATION.md`。必须使用实际收购的 Mac mini、不同 macOS 和 Intel 机型继续验证，尤其是已知故障机的检出能力。目前没有完成机型覆盖认证，不应据此单独决定收购。
 
-后续优先项：详细 NVMe 健康数据的机型适配、真实 Mac mini 正常 / 故障样本验收、接口传输辅助、长时间稳定性统计、签名公证分发。
+后续优先项：详细 NVMe 健康数据的机型适配、真实 Mac mini 正常 / 故障样本验收、接口传输辅助、长时间稳定性统计。
