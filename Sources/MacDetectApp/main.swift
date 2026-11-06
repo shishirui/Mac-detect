@@ -38,14 +38,27 @@ if let destination = argument("--reset-readiness-report") {
     default: outcome = .init(.unavailable, "未知检测项目")
     }
     if let data = try? JSONEncoder().encode(outcome) { FileHandle.standardOutput.write(data) }
-} else if let destination = argument("--quick-report") {
-    let report = Scanner(mode: .quick, executable: arguments[0], token: CancellationToken(), emit: { _ in }).run()
+} else if arguments.contains("--quick-report") || arguments.contains("--standard-report") {
+    let reportFlags = arguments.filter { $0 == "--quick-report" || $0 == "--standard-report" }
+    guard reportFlags.count == 1, let flag = reportFlags.first,
+          let destination = argument(flag), !destination.isEmpty, !destination.hasPrefix("--") else {
+        fputs("用法：MacDetect --quick-report <报告.json> 或 MacDetect --standard-report <报告.json>；请选择一种模式并提供输出路径。\n", stderr)
+        exit(2)
+    }
+    let mode: InspectionMode = flag == "--standard-report" ? .standard : .quick
+    if mode == .standard { fputs("开始标准验机（\(mode.estimate)）：\(mode.detail)\n", stderr) }
+    let report = Scanner(mode: mode, executable: arguments[0], token: CancellationToken(), emit: { event in
+        if mode == .standard, case .result(let result) = event, result.status == .running {
+            fputs("正在检测：\(result.title)\n", stderr)
+        }
+    }).run()
     do {
         let url = URL(fileURLWithPath: destination)
         try ReportExporter.json(report).write(to: url, options: .atomic)
         try Data(ReportExporter.html(report).utf8).write(to: url.deletingPathExtension().appendingPathExtension("html"), options: .atomic)
         try PDFExporter.write(report, to: url.deletingPathExtension().appendingPathExtension("pdf"))
-        print("只读快速筛查完成：\(report.passedCount)/\(report.checks.count) 项通过；\(report.verdict)。报告已写入指定目录。")
+        let label = mode == .quick ? "只读快速筛查" : mode.title
+        print("\(label)完成：\(report.passedCount)/\(report.checks.count) 项通过；\(report.verdict)。报告已写入指定目录。")
     } catch { fputs("报告失败：\(error.localizedDescription)\n", stderr); exit(1) }
 } else {
     MacDetectApplication.main()

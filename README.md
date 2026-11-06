@@ -98,7 +98,15 @@ open 'dist/Mac验机助手.app'
 'dist/Mac验机助手.app/Contents/MacOS/MacDetect' --quick-report /tmp/mac-inspection.json
 ```
 
-该命令会生成指定 JSON，以及同名 HTML、PDF。实际机器序列号会写入这些本地文件，不应上传到代码仓库。
+在命令行运行与界面相同的标准验机并输出三种报告（不会启动 GUI）：
+
+```sh
+'dist/Mac验机助手.app/Contents/MacOS/MacDetect' --standard-report /tmp/mac-standard-inspection.json
+```
+
+标准验机约需 15–25 分钟，CPU / 内存 / GPU 各测试 5 分钟，磁盘最多写入 512 MiB；沿用界面的温度 / 风扇持续采样、热状态及内存压力保护。终端会提示当前检测项目。人工检查项目仍保留为未验证。
+
+两种命令均会生成指定 JSON，以及同名 HTML、PDF。每次只选一种报告模式，并提供输出路径；缺少路径或同时指定两种模式会报错退出。实际机器序列号会写入这些本地文件，不应上传到代码仓库。
 
 仅验证重置条件的只读命令（不会打开抹掉助理或执行重启 / 清除）：
 
