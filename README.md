@@ -1,17 +1,17 @@
 # Mac 验机助手
 
-面向二手 Mac 收购的本地原生 macOS 应用。拷贝 `.app` 后双击运行；每轮检测独立记录，自动保存，支持 PDF、HTML、JSON 导出。当前为 **0.3.0 预览版**，不是 Apple 认证检测工具，也不能保证机器无故障。
+面向二手 Mac 收购的本地原生 macOS 应用。拷贝 `.app` 后双击运行；每轮检测独立记录，自动保存，支持 PDF、HTML、JSON 导出。当前为 **0.3.1 预览版**，不是 Apple 认证检测工具，也不能保证机器无故障。
 
 ## 运行
 
-[下载安装包](https://github.com/shishirui/Mac-detect/releases/tag/v0.3.0)。
+[下载安装包](https://github.com/shishirui/Mac-detect/releases/tag/v0.3.1)。
 
-构建产物：`dist/Mac验机助手.app`，或解压 `dist/MacDetect-0.3.0-universal.zip`。
+构建产物：`dist/Mac验机助手.app`，或解压 `dist/MacDetect-0.3.1-universal.zip`。
 
 - 目标系统：macOS 13 或更新版本；Universal 二进制包含 arm64、x86_64。
 - 无需在目标机安装 Xcode、Homebrew、Python 或其他运行依赖。
 - 需要能够登录并运行应用的 macOS。不能在激活锁页面或无法启动系统时直接运行。
-- GitHub **v0.3.0 发布包**使用 Developer ID Application 签名并通过 Apple 公证，已附加公证票据。首次运行仍可能出现正常的“从互联网下载的应用”确认框；无需关闭 Gatekeeper 或 SIP。Apple 公证是软件分发安全检查，不是硬件检测能力认证。
+- GitHub **v0.3.1 发布包**使用 Developer ID Application 签名并通过 Apple 公证，已附加公证票据。首次运行仍可能出现正常的“从互联网下载的应用”确认框；无需关闭 Gatekeeper 或 SIP。Apple 公证是软件分发安全检查，不是硬件检测能力认证。
 - 自行构建且未配置签名 / 公证凭据时，仍会生成 ad-hoc 本地开发包，不能把它当作已公证的发布包。
 - 所有自动检测均在本机执行，无遥测、账户、上传或服务器依赖。官方说明链接会在用户点击后打开浏览器。
 

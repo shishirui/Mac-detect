@@ -1,6 +1,6 @@
 import Foundation
 
-public let appVersion = "0.3.0"
+public let appVersion = "0.3.1"
 
 public enum InspectionMode: String, Codable, CaseIterable, Identifiable {
     case quick, standard, extended
