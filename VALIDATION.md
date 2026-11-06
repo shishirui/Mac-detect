@@ -1,5 +1,17 @@
 # 验证记录
 
+## 0.3.1 命令行标准验机
+
+验证日期：2026-11-06（Asia/Singapore）。新增 `--standard-report <报告.json>`，复用界面标准验机及 JSON / HTML / PDF 导出，终端显示当前检测项目。
+
+- 本机 debug 构建通过；使用最终 Developer ID 签名的 Universal release 程序设置 `MACDETECT_TEST_APP`，完整 55 项测试通过，无跳过。
+- 新增命令行集成测试覆盖标准模式三格式报告、CPU / 内存 / GPU 各 300 秒及磁盘 512 MiB 的 worker 参数、磁盘临时目录清理、快速模式不启动 worker，以及缺少输出路径 / 同时指定两种模式时退出码为 2。
+- 标准命令行集成测试真实执行系统信息采集和报告导出，仅把负载 worker 替换为明确标注的测试结果，未运行完整 15–25 分钟负载。既有短时 CPU / 内存 / 磁盘、持续采样与标准模式取消测试通过。人工检查仍保持未验证。
+- Universal 包含 arm64 / x86_64，两种架构最低系统版本均为 macOS 13.0。使用 Developer ID Application 签名和 Hardened Runtime，Apple 公证返回 Accepted，票据附加成功。
+- 最终 ZIP 解压后严格签名验证、票据校验、Gatekeeper、`syspolicy_check distribution` 全部通过；解压后二进制与测试程序一致，版本为 0.3.1。SHA-256 校验通过，安装包未携带检测报告或签名 / 公证凭据。
+
+本次未执行完整标准 / 深度压力测试，也未进行 Intel 或其他 macOS 版本的真机验收。
+
 ## 0.3.0 交机与重置助手
 
 验证日期：2026-11-01（Asia/Shanghai）。新增本机条件识别、四种重置 / 恢复目的的指引、交机包导出导入、系统抹掉助理入口保护和人工交机记录。
